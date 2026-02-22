@@ -22,50 +22,51 @@ def example_problem(request):
     edge_i, edge_j = np.unique(
         np.vstack((rng.choice(nx, ncons), rng.choice(ny, ncons))), axis=1
     )
-    return nx, ny, k, w, edge_i, edge_j
+    assign = [edge_i[edge_j == j] for j in range(ny)]
+
+    return nx, ny, k, w, assign
 
 
-def mwc_docplex(nx, ny, k, w, edge_i, edge_j):
+def mwc0_docplex(nx, ny, k, w, assign):
     with docplex.mp.model.Model() as m:
-        x = m.binary_var_list(nx)
-        y = m.binary_var_list(ny)
+        x = np.asarray(m.binary_var_list(nx))
+        y = np.asarray(m.binary_var_list(ny))
         m.maximize(m.scal_prod_vars_all_different(y, w))
         m.add_constraint_(m.sum_vars_all_different(x) <= k)
         m.add_constraints_(
-            m.sum_vars_all_different(x[i] for i in edge_i[edge_j == j]) >= y[j]
-            for j in range(ny)
+            m.sum_vars_all_different(x[i]) >= y[j] for j, i in enumerate(assign)
         )
         solution = m.solve()
         return solution.get_values(x)
 
 
-def mwc_cvxpy(nx, ny, k, w, edge_i, edge_j):
+def mwc1_cvxpy(nx, ny, k, w, assign):
     x = cvxpy.Variable(nx, boolean=True)
     y = cvxpy.Variable(ny, boolean=True)
     problem = cvxpy.Problem(
         cvxpy.Maximize(y @ w),
         [
             x.sum() <= k,
-            *[cvxpy.sum(x[i] for i in edge_i[edge_j == j]) >= y[j] for j in range(ny)],
+            *(cvxpy.sum(x[i]) >= y[j] for j, i in enumerate(assign)),
         ],
     )
     problem.solve(solver="cplex")
     return x.value
 
 
-def mwc_linopy(nx, ny, k, w, edge_i, edge_j):
+def mwc2_linopy(nx, ny, k, w, assign):
     m = linopy.Model()
     x = m.add_variables(coords=[np.arange(nx)], binary=True)
     y = m.add_variables(coords=[np.arange(ny)], binary=True)
     m.add_constraints(x.sum() <= k)
-    for j in range(ny):
-        m.add_constraints(x.loc[edge_i[edge_j == j]].sum() >= y[j])
+    for j, i in enumerate(assign):
+        m.add_constraints(x.loc[i].sum() >= y[j])
     m.add_objective(y @ w, sense="max")
     m.solve(solver_name="cplex")
     return x.solution
 
 
-@pytest.mark.parametrize("solver", [mwc_docplex, mwc_cvxpy, mwc_linopy])
+@pytest.mark.parametrize("solver", [mwc0_docplex, mwc1_cvxpy, mwc2_linopy])
 def test_docplex(example_problem, solver, benchmark):
     benchmark(solver, *example_problem)
 
