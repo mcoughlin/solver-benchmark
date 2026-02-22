@@ -47,7 +47,7 @@ def mwc1_cvxpy(nx, ny, k, w, assign):
         cvxpy.Maximize(y @ w),
         [
             x.sum() <= k,
-            *(cvxpy.sum(x[i]) >= y[j] for j, i in enumerate(assign)),
+            *(x[i].sum() >= y[j] for j, i in enumerate(assign)),
         ],
     )
     problem.solve(solver="cplex")
